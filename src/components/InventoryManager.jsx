@@ -1,8 +1,9 @@
-// src/components/InventoryManager.jsx - ORIGINAL STYLING
+// src/components/InventoryManager.jsx - COMPLETE UPDATED VERSION
 import { useState, useEffect, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const InventoryManager = ({ shopId }) => {
   const [products, setProducts] = useState([]);
@@ -11,11 +12,14 @@ const InventoryManager = ({ shopId }) => {
   const [editingProduct, setEditingProduct] = useState(null);
   const fileInputRef = useRef(null);
   const auth = getAuth();
+  const { t, isMalayalam, changeLanguage } = useLanguage();
 
-  // Form state
+  // SIMPLIFIED FORM STATE - Optional Malayalam fields
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
+    name: '',           // REQUIRED - English name
+    name_ml: '',        // OPTIONAL - Malayalam name
+    description: '',    // English description
+    description_ml: '', // Optional Malayalam description
     price: '',
     category: 'vegetables',
     stock: '',
@@ -81,8 +85,10 @@ const InventoryManager = ({ shopId }) => {
   const handleEdit = (product) => {
     setEditingProduct(product);
     setFormData({
-      name: product.name,
+      name: product.name || '',
+      name_ml: product.name_ml || '', // Handle optional field
       description: product.description || '',
+      description_ml: product.description_ml || '', // Handle optional field
       price: product.price.toString(),
       category: product.category,
       stock: product.stock.toString(),
@@ -108,7 +114,9 @@ const InventoryManager = ({ shopId }) => {
   const resetForm = () => {
     setFormData({
       name: '',
+      name_ml: '',
       description: '',
+      description_ml: '',
       price: '',
       category: 'vegetables',
       stock: '',
@@ -122,6 +130,7 @@ const InventoryManager = ({ shopId }) => {
     }
   };
 
+  // SIMPLIFIED: Regular handleChange - no complex logic
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -168,9 +177,25 @@ const InventoryManager = ({ shopId }) => {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
+      {/* Header with Language Switcher */}
       <div style={styles.header}>
-        <h2>📦 Inventory Management</h2>
+        <div style={styles.headerLeft}>
+          <h2>📦 Inventory Management</h2>
+          <div style={styles.languageSwitch}>
+            <button 
+              onClick={() => changeLanguage('en')}
+              style={!isMalayalam ? styles.langBtnActive : styles.langBtn}
+            >
+              EN
+            </button>
+            <button 
+              onClick={() => changeLanguage('ml')}
+              style={isMalayalam ? styles.langBtnActive : styles.langBtn}
+            >
+              ML
+            </button>
+          </div>
+        </div>
         <button 
           onClick={() => setShowAddForm(true)}
           style={styles.addButton}
@@ -179,7 +204,7 @@ const InventoryManager = ({ shopId }) => {
         </button>
       </div>
 
-      {/* Add/Edit Product Form */}
+      {/* Add/Edit Product Form - Simplified */}
       {showAddForm && (
         <div style={styles.formOverlay}>
           <div style={styles.formCard}>
@@ -190,8 +215,9 @@ const InventoryManager = ({ shopId }) => {
             
             <form onSubmit={handleSubmit} style={styles.form}>
               <div style={styles.formGrid}>
+                {/* English Name - REQUIRED */}
                 <div style={styles.formGroup}>
-                  <label>Product Name *</label>
+                  <label>Product Name (English) *</label>
                   <input
                     type="text"
                     name="name"
@@ -199,8 +225,25 @@ const InventoryManager = ({ shopId }) => {
                     onChange={handleChange}
                     required
                     style={styles.input}
-                    placeholder="Enter product name"
+                    placeholder="Enter product name in English"
                   />
+                </div>
+
+                {/* Malayalam Name - OPTIONAL */}
+                <div style={styles.formGroup}>
+                  <label>Product Name (Malayalam) <small style={styles.optional}>(optional)</small></label>
+                  <input
+                    type="text"
+                    name="name_ml"
+                    value={formData.name_ml}
+                    onChange={handleChange}
+                    style={styles.input}
+                    placeholder="മലയാളത്തിൽ ഉൽപ്പന്നത്തിന്റെ പേര്"
+                    className="malayalam-input"
+                  />
+                  <small style={styles.helpText}>
+                    Add Malayalam name for better customer experience
+                  </small>
                 </div>
 
                 <div style={styles.formGroup}>
@@ -221,7 +264,7 @@ const InventoryManager = ({ shopId }) => {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label>Price ($) *</label>
+                  <label>Price (₹) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -272,24 +315,36 @@ const InventoryManager = ({ shopId }) => {
                     type="url"
                     name="imageUrl"
                     value={formData.imageUrl}
-                    onChange={handleImageUrlChange}
+                    onChange={handleChange}
                     style={styles.input}
                     placeholder="https://example.com/image.jpg"
                   />
-                  <small style={styles.helpText}>
-                    🔒 Image upload feature will be available after Firebase Storage setup
-                  </small>
                 </div>
 
+                {/* English Description - OPTIONAL */}
                 <div style={styles.formGroupFull}>
-                  <label>Description</label>
+                  <label>Description (English) <small style={styles.optional}>(optional)</small></label>
                   <textarea
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
                     style={styles.textarea}
-                    placeholder="Product description (optional)"
-                    rows="3"
+                    placeholder="Product description in English"
+                    rows="2"
+                  />
+                </div>
+
+                {/* Malayalam Description - OPTIONAL */}
+                <div style={styles.formGroupFull}>
+                  <label>Description (Malayalam) <small style={styles.optional}>(optional)</small></label>
+                  <textarea
+                    name="description_ml"
+                    value={formData.description_ml}
+                    onChange={handleChange}
+                    style={styles.textarea}
+                    placeholder="മലയാളത്തിൽ ഉൽപ്പന്ന വിവരണം"
+                    rows="2"
+                    className="malayalam-input"
                   />
                 </div>
               </div>
@@ -307,14 +362,14 @@ const InventoryManager = ({ shopId }) => {
         </div>
       )}
 
-      {/* Products List */}
+      {/* Products List - Uses translation function */}
       <div style={styles.productsSection}>
         <div style={styles.statsBar}>
           <div style={styles.stat}>
             <strong>Total Products:</strong> {products.length}
           </div>
           <div style={styles.stat}>
-            <strong>Categories:</strong> {new Set(products.map(p => p.category)).size}
+            <strong>With Malayalam Names:</strong> {products.filter(p => p.name_ml).length}
           </div>
           <div style={styles.stat}>
             <strong>Low Stock:</strong> {products.filter(p => p.stock < 10).length}
@@ -338,7 +393,7 @@ const InventoryManager = ({ shopId }) => {
               <div key={product.id} style={styles.productCard}>
                 <div style={styles.productImage}>
                   {product.imageUrl ? (
-                    <img src={product.imageUrl} alt={product.name} style={styles.image} />
+                    <img src={product.imageUrl} alt={t(product)} style={styles.image} />
                   ) : (
                     <div style={styles.placeholderImage}>
                       {categories.find(cat => cat.value === product.category)?.label.split(' ')[0]}
@@ -347,8 +402,19 @@ const InventoryManager = ({ shopId }) => {
                 </div>
                 
                 <div style={styles.productInfo}>
-                  <h4 style={styles.productName}>{product.name}</h4>
-                  <p style={styles.productDescription}>{product.description}</p>
+                  {/* UPDATED: Uses simple translation function */}
+                  <h4 style={styles.productName}>{t(product)}</h4>
+                  {product.name_ml && (
+                    <div style={styles.malayalamBadge}>
+                      🌸 Malayalam name available
+                    </div>
+                  )}
+                  <p style={styles.productDescription}>
+                    {isMalayalam && product.description_ml 
+                      ? product.description_ml 
+                      : product.description
+                    }
+                  </p>
                   
                   <div style={styles.productDetails}>
                     <div style={styles.detail}>
@@ -358,7 +424,7 @@ const InventoryManager = ({ shopId }) => {
                       </span>
                     </div>
                     <div style={styles.detail}>
-                      <strong>Price:</strong> ${product.price} / {product.unit}
+                      <strong>Price:</strong> ₹{product.price} / {product.unit}
                     </div>
                     <div style={styles.detail}>
                       <strong>Stock:</strong> 
@@ -392,7 +458,7 @@ const InventoryManager = ({ shopId }) => {
   );
 };
 
-// ORIGINAL COOL STYLES
+// COMPLETE STYLES WITH LANGUAGE SUPPORT
 const styles = {
   container: {
     padding: '0',
@@ -402,6 +468,36 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '2rem',
+    flexWrap: 'wrap',
+    gap: '1rem',
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '2rem',
+    flexWrap: 'wrap',
+  },
+  languageSwitch: {
+    display: 'flex',
+    backgroundColor: '#ecf0f1',
+    borderRadius: '6px',
+    overflow: 'hidden',
+  },
+  langBtn: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    color: '#2c3e50',
+  },
+  langBtnActive: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    backgroundColor: '#3498db',
+    color: 'white',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
   },
   addButton: {
     backgroundColor: '#27ae60',
@@ -520,6 +616,10 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
   },
+  optional: {
+    color: '#7f8c8d',
+    fontWeight: 'normal',
+  },
   helpText: {
     color: '#7f8c8d',
     fontSize: '0.8rem',
@@ -536,6 +636,7 @@ const styles = {
     backgroundColor: 'white',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    flexWrap: 'wrap',
   },
   stat: {
     fontSize: '1rem',
@@ -585,12 +686,24 @@ const styles = {
     margin: '0 0 0.5rem 0',
     fontSize: '1.2rem',
     color: '#2c3e50',
+    minHeight: '2.8em',
+    lineHeight: '1.3',
+  },
+  malayalamBadge: {
+    backgroundColor: '#e8f6f3',
+    color: '#27ae60',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '12px',
+    fontSize: '0.7rem',
+    display: 'inline-block',
+    marginBottom: '0.5rem',
   },
   productDescription: {
     margin: '0 0 1rem 0',
     color: '#7f8c8d',
     fontSize: '0.9rem',
     lineHeight: '1.4',
+    minHeight: '2.8em',
   },
   productDetails: {
     display: 'flex',

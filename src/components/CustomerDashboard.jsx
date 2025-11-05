@@ -1,11 +1,13 @@
-// src/components/CustomerDashboard.jsx - COMPLETE VERSION
-import { calculateOrderTotal, calculateItemTotal } from '../utils/orderCalculations';
+// src/components/CustomerDashboard.jsx - MOBILE RESPONSIVE VERSION
 import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import OrderSystem from './OrderSystem';
 import CustomerOrderHistory from './CustomerOrderHistory';
+import CustomerProfile from './CustomerProfile';
+import { calculateOrderTotal, calculateItemTotal } from '../utils/orderCalculations';
+import { useLanguage } from '../contexts/LanguageContext'; // USING LANGUAGE CONTEXT
 
 const CustomerDashboard = () => {
   const [shops, setShops] = useState([]);
@@ -15,8 +17,11 @@ const CustomerDashboard = () => {
   const [cart, setCart] = useState([]);
   const [showOrderSystem, setShowOrderSystem] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
-  const [activeView, setActiveView] = useState('browse'); // 'browse' or 'orders'
+  const [activeView, setActiveView] = useState('browse');
+  const [isCartOpen, setIsCartOpen] = useState(false); // Mobile cart state
+  const [isShopListOpen, setIsShopListOpen] = useState(false); // Mobile shop list state
   const auth = getAuth();
+  const { t, isMalayalam, changeLanguage } = useLanguage(); // USING LANGUAGE CONTEXT
 
   useEffect(() => {
     fetchShops();
@@ -57,13 +62,14 @@ const CustomerDashboard = () => {
       const productsList = [];
       querySnapshot.forEach((doc) => {
         const product = { id: doc.id, ...doc.data() };
-        if (product.stock > 0) { // Only show products with stock
+        if (product.stock > 0) {
           productsList.push(product);
         }
       });
       
       setProducts(productsList);
       setSelectedShop(shops.find(shop => shop.id === shopId));
+      setIsShopListOpen(false); // Close shop list on mobile after selection
     } catch (error) {
       console.error('Error fetching products:', error);
     } finally {
@@ -103,27 +109,27 @@ const CustomerDashboard = () => {
   };
 
   const updateQuantity = (productId, quantity) => {
-  if (quantity === 0) {
-    removeFromCart(productId);
-    return;
-  }
-  
-  const product = cart.find(item => item.id === productId);
-  if (product && quantity > product.stock) {
-    alert(`Only ${product.stock} items available in stock!`);
-    return;
-  }
-  
-  setCart(prevCart =>
-    prevCart.map(item =>
-      item.id === productId ? { ...item, quantity } : item
-    )
-  );
-};
+    if (quantity === 0) {
+      removeFromCart(productId);
+      return;
+    }
+    
+    const product = cart.find(item => item.id === productId);
+    if (product && quantity > product.stock) {
+      alert(`Only ${product.stock} items available in stock!`);
+      return;
+    }
+    
+    setCart(prevCart =>
+      prevCart.map(item =>
+        item.id === productId ? { ...item, quantity } : item
+      )
+    );
+  };
 
-const getCartTotal = () => {
-  return calculateOrderTotal(cart); // ← ONLY CHANGE THIS LINE
-};
+  const getCartTotal = () => {
+    return calculateOrderTotal(cart);
+  };
 
   const handlePlaceOrder = () => {
     if (cart.length === 0) {
@@ -137,6 +143,7 @@ const getCartTotal = () => {
     }
     
     setShowOrderSystem(true);
+    setIsCartOpen(false); // Close cart on mobile when placing order
   };
 
   const handleOrderPlaced = (orderId) => {
@@ -161,6 +168,16 @@ const getCartTotal = () => {
     { value: 'household', label: '🏠 Household' },
     { value: 'other', label: '📦 Other' }
   ];
+
+  // Mobile cart toggle
+  const toggleCart = () => {
+    setIsCartOpen(!isCartOpen);
+  };
+
+  // Mobile shop list toggle
+  const toggleShopList = () => {
+    setIsShopListOpen(!isShopListOpen);
+  };
 
   if (loading && shops.length === 0) {
     return (
@@ -193,10 +210,27 @@ const getCartTotal = () => {
       )}
 
       {/* Header */}
+      {/* UPDATED HEADER WITH LANGUAGE SWITCHER */}
       <div style={styles.header}>
-        <h1>🛒 Customer Dashboard</h1>
+        <div style={styles.headerLeft}>
+          <h1>🛒 Customer Dashboard</h1>
+          <div style={styles.languageSwitch}>
+            <button 
+              onClick={() => changeLanguage('en')}
+              style={!isMalayalam ? styles.langBtnActive : styles.langBtn}
+            >
+              EN
+            </button>
+            <button 
+              onClick={() => changeLanguage('ml')}
+              style={isMalayalam ? styles.langBtnActive : styles.langBtn}
+            >
+              ML
+            </button>
+          </div>
+        </div>
         <div style={styles.userInfo}>
-          <span>Welcome, {auth.currentUser?.email}</span>
+          <span style={styles.userEmail}>{auth.currentUser?.email}</span>
           <button 
             onClick={() => auth.signOut()}
             style={styles.logoutBtn}
@@ -206,7 +240,42 @@ const getCartTotal = () => {
         </div>
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Mobile Bottom Navigation */}
+      <div style={styles.mobileNav}>
+        <button 
+          onClick={() => setActiveView('browse')}
+          style={activeView === 'browse' ? styles.mobileNavBtnActive : styles.mobileNavBtn}
+        >
+          <span style={styles.mobileNavIcon}>🏪</span>
+          <span style={styles.mobileNavText}>Shops</span>
+        </button>
+        <button 
+          onClick={() => setActiveView('orders')}
+          style={activeView === 'orders' ? styles.mobileNavBtnActive : styles.mobileNavBtn}
+        >
+          <span style={styles.mobileNavIcon}>📋</span>
+          <span style={styles.mobileNavText}>Orders</span>
+        </button>
+        <button 
+          onClick={() => setActiveView('profile')}
+          style={activeView === 'profile' ? styles.mobileNavBtnActive : styles.mobileNavBtn}
+        >
+          <span style={styles.mobileNavIcon}>👤</span>
+          <span style={styles.mobileNavText}>Profile</span>
+        </button>
+        <button 
+          onClick={toggleCart}
+          style={styles.mobileCartBtn}
+        >
+          <span style={styles.mobileNavIcon}>🛒</span>
+          <span style={styles.mobileNavText}>Cart</span>
+          {cart.length > 0 && (
+            <span style={styles.cartBadge}>{cart.length}</span>
+          )}
+        </button>
+      </div>
+
+      {/* Desktop Navigation */}
       <nav style={styles.nav}>
         <button 
           onClick={() => setActiveView('browse')}
@@ -220,8 +289,21 @@ const getCartTotal = () => {
         >
           📋 My Orders
         </button>
+        <button 
+          onClick={() => setActiveView('profile')}
+          style={activeView === 'profile' ? styles.navBtnActive : styles.navBtn}
+        >
+          👤 My Profile
+        </button>
         <div style={styles.cartSummary}>
           🛒 Cart: {cart.length} items | ${getCartTotal().toFixed(2)}
+          <button 
+            onClick={handlePlaceOrder}
+            style={styles.placeOrderBtn}
+            disabled={cart.length === 0}
+          >
+            📦 Place Order
+          </button>
         </div>
       </nav>
 
@@ -229,9 +311,25 @@ const getCartTotal = () => {
       <div style={styles.mainContent}>
         {activeView === 'browse' ? (
           <div style={styles.browseSection}>
+            {/* Mobile Shop Selection */}
+            <div style={styles.mobileShopHeader}>
+              <button onClick={toggleShopList} style={styles.mobileShopToggle}>
+                {selectedShop ? selectedShop.shopName : 'Select Shop'}
+                <span style={styles.dropdownIcon}>▼</span>
+              </button>
+            </div>
+
             {/* Shops Sidebar */}
-            <div style={styles.sidebar}>
-              <h3>🏪 Available Shops ({shops.length})</h3>
+            <div style={{
+              ...styles.sidebar,
+              ...(isShopListOpen && styles.sidebarOpen)
+            }}>
+              <div style={styles.sidebarHeader}>
+                <h3>🏪 Available Shops ({shops.length})</h3>
+                <button onClick={toggleShopList} style={styles.closeSidebar}>
+                  ✕
+                </button>
+              </div>
               <div style={styles.shopsList}>
                 {shops.map(shop => (
                   <div
@@ -285,7 +383,7 @@ const getCartTotal = () => {
                         <div key={product.id} style={styles.productCard}>
                           <div style={styles.productImage}>
                             {product.imageUrl ? (
-                              <img src={product.imageUrl} alt={product.name} style={styles.image} />
+                              <img src={product.imageUrl} alt={t(product)} style={styles.image} />
                             ) : (
                               <div style={styles.placeholderImage}>
                                 {categories.find(cat => cat.value === product.category)?.label.split(' ')[0]}
@@ -294,8 +392,14 @@ const getCartTotal = () => {
                           </div>
                           
                           <div style={styles.productInfo}>
-                            <h4 style={styles.productName}>{product.name}</h4>
-                            <p style={styles.productDescription}>{product.description}</p>
+                            {/* UPDATED: Uses translation function */}
+                            <h4 style={styles.productName}>{t(product)}</h4>
+                            <p style={styles.productDescription}>
+                              {isMalayalam && product.description_ml 
+                                ? product.description_ml 
+                                : product.description
+                              }
+                            </p>
                             
                             <div style={styles.productDetails}>
                               <div style={styles.detail}>
@@ -332,7 +436,7 @@ const getCartTotal = () => {
               ) : (
                 <div style={styles.welcomeSection}>
                   <h2>Welcome to NexCart! 🛒</h2>
-                  <p>Select a shop from the left sidebar to start shopping.</p>
+                  <p>Select a shop from the sidebar to start shopping.</p>
                   <div style={styles.featureList}>
                     <div style={styles.feature}>
                       <span>🏪</span>
@@ -361,8 +465,16 @@ const getCartTotal = () => {
             </div>
 
             {/* Shopping Cart Sidebar */}
-            <div style={styles.cartSidebar}>
-              <h3>🛒 Your Cart {cart.length > 0 && `(${cart.length})`}</h3>
+            <div style={{
+              ...styles.cartSidebar,
+              ...(isCartOpen && styles.cartSidebarOpen)
+            }}>
+              <div style={styles.cartHeader}>
+                <h3>🛒 Your Cart {cart.length > 0 && `(${cart.length})`}</h3>
+                <button onClick={toggleCart} style={styles.closeCart}>
+                  ✕
+                </button>
+              </div>
               
               {cart.length === 0 ? (
                 <div style={styles.emptyCart}>
@@ -371,7 +483,7 @@ const getCartTotal = () => {
                 </div>
               ) : (
                 <div style={styles.cartContent}>
-                  <div style={styles.cartHeader}>
+                  <div style={styles.cartInfo}>
                     <span>Shopping at: <strong>{selectedShop?.shopName}</strong></span>
                   </div>
                   
@@ -431,9 +543,15 @@ const getCartTotal = () => {
               )}
             </div>
           </div>
-        ) : (
-          /* Orders View */
+        ) : activeView === 'orders' ? (
           <CustomerOrderHistory />
+        ) : activeView === 'profile' ? (
+          <CustomerProfile />
+        ) : (
+          <div style={styles.welcomeSection}>
+            <h2>Welcome to NexCart! 🛒</h2>
+            <p>Select a view from the navigation above.</p>
+          </div>
         )}
       </div>
 
@@ -446,28 +564,72 @@ const getCartTotal = () => {
           onClose={() => setShowOrderSystem(false)}
         />
       )}
+
+      {/* Mobile Overlay */}
+      {(isCartOpen || isShopListOpen) && (
+        <div style={styles.overlay} onClick={() => {
+          setIsCartOpen(false);
+          setIsShopListOpen(false);
+        }} />
+      )}
     </div>
   );
 };
 
-// COMPLETE STYLES
+// COMPLETE MOBILE-RESPONSIVE STYLES
 const styles = {
   dashboard: {
     minHeight: '100vh',
     backgroundColor: '#f5f5f5',
+    paddingBottom: '80px', // Space for mobile nav
   },
   header: {
     backgroundColor: '#2c3e50',
     color: 'white',
-    padding: '1rem 2rem',
+    padding: '1rem',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '1rem',
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '2rem',
+    flexWrap: 'wrap',
+  },
+  languageSwitch: {
+    display: 'flex',
+    backgroundColor: '#ecf0f1',
+    borderRadius: '6px',
+    overflow: 'hidden',
+  },
+  langBtn: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    color: '#2c3e50',
+  },
+  langBtnActive: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    backgroundColor: '#3498db',
+    color: 'white',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
   },
   userInfo: {
     display: 'flex',
     alignItems: 'center',
     gap: '1rem',
+    flexWrap: 'wrap',
+  },
+  userEmail: {
+    fontSize: '0.9rem',
+    opacity: 0.8,
   },
   logoutBtn: {
     backgroundColor: '#e74c3c',
@@ -476,59 +638,200 @@ const styles = {
     padding: '0.5rem 1rem',
     borderRadius: '4px',
     cursor: 'pointer',
+    fontSize: '0.9rem',
   },
+
+  // Mobile Navigation
+  mobileNav: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'white',
+    borderTop: '1px solid #ddd',
+    display: 'flex',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    padding: '0.5rem 0',
+    zIndex: 1000,
+  },
+  mobileNavBtn: {
+    background: 'none',
+    border: 'none',
+    padding: '0.5rem',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.25rem',
+    flex: 1,
+    color: '#7f8c8d',
+  },
+  mobileNavBtnActive: {
+    background: 'none',
+    border: 'none',
+    padding: '0.5rem',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.25rem',
+    flex: 1,
+    color: '#3498db',
+    fontWeight: '600',
+  },
+  mobileCartBtn: {
+    background: 'none',
+    border: 'none',
+    padding: '0.5rem',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.25rem',
+    flex: 1,
+    color: '#7f8c8d',
+    position: 'relative',
+  },
+  mobileNavIcon: {
+    fontSize: '1.2rem',
+  },
+  mobileNavText: {
+    fontSize: '0.7rem',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: '0',
+    right: '20%',
+    backgroundColor: '#e74c3c',
+    color: 'white',
+    borderRadius: '50%',
+    width: '18px',
+    height: '18px',
+    fontSize: '0.7rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Desktop Navigation
   nav: {
     backgroundColor: 'white',
-    padding: '1rem 2rem',
+    padding: '1rem',
     borderBottom: '1px solid #ddd',
     display: 'flex',
     gap: '1rem',
     alignItems: 'center',
+    flexWrap: 'wrap',
   },
   navBtn: {
-    padding: '0.5rem 1rem',
+    padding: '0.75rem 1.5rem',
     border: '1px solid #ddd',
     backgroundColor: 'white',
-    borderRadius: '4px',
+    borderRadius: '8px',
     cursor: 'pointer',
+    fontSize: '1rem',
   },
   navBtnActive: {
-    padding: '0.5rem 1rem',
+    padding: '0.75rem 1.5rem',
     border: '1px solid #3498db',
     backgroundColor: '#3498db',
     color: 'white',
-    borderRadius: '4px',
+    borderRadius: '8px',
     cursor: 'pointer',
+    fontSize: '1rem',
   },
   cartSummary: {
     marginLeft: 'auto',
     fontWeight: '600',
     color: '#2c3e50',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
   },
+  placeOrderBtn: {
+    backgroundColor: '#27ae60',
+    color: 'white',
+    border: 'none',
+    padding: '0.5rem 1rem',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+  },
+
+  // Main Content
   mainContent: {
-    padding: '2rem',
-    minHeight: 'calc(100vh - 140px)',
+    padding: '1rem',
+    minHeight: 'calc(100vh - 200px)',
   },
+
+  // Browse Section - Mobile First
   browseSection: {
-    display: 'grid',
-    gridTemplateColumns: '250px 1fr 300px',
-    gap: '2rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
     height: '100%',
   },
+
+  // Mobile Shop Header
+  mobileShopHeader: {
+    display: 'block',
+  },
+  mobileShopToggle: {
+    width: '100%',
+    padding: '1rem',
+    backgroundColor: 'white',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    fontSize: '1rem',
+    cursor: 'pointer',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownIcon: {
+    fontSize: '0.8rem',
+    opacity: 0.7,
+  },
+
+  // Sidebar - Mobile
   sidebar: {
     backgroundColor: 'white',
     padding: '1rem',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    height: 'fit-content',
-    maxHeight: '600px',
+    maxHeight: '400px',
     overflowY: 'auto',
+    display: 'none', // Hidden on mobile by default
+  },
+  sidebarOpen: {
+    display: 'block', // Show when open on mobile
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '90%',
+    maxWidth: '400px',
+    maxHeight: '80vh',
+    zIndex: 1001,
+  },
+  sidebarHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+  },
+  closeSidebar: {
+    background: 'none',
+    border: 'none',
+    fontSize: '1.2rem',
+    cursor: 'pointer',
+    color: '#666',
   },
   shopsList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.75rem',
-    marginTop: '1rem',
   },
   shopItem: {
     display: 'flex',
@@ -563,24 +866,27 @@ const styles = {
     fontSize: '0.8rem',
     color: '#7f8c8d',
   },
+
+  // Products Area
   productsArea: {
     backgroundColor: 'white',
-    padding: '1.5rem',
+    padding: '1rem',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     minHeight: '500px',
+    order: 2,
   },
   shopSection: {
     height: '100%',
   },
   shopHeader: {
-    marginBottom: '2rem',
+    marginBottom: '1.5rem',
     paddingBottom: '1rem',
     borderBottom: '2px solid #ecf0f1',
   },
   shopDescription: {
     color: '#7f8c8d',
-    fontSize: '1.1rem',
+    fontSize: '1rem',
     margin: '0.5rem 0',
   },
   shopDetails: {
@@ -680,27 +986,59 @@ const styles = {
     backgroundColor: '#27ae60',
     color: 'white',
     border: 'none',
-    padding: '0.75rem',
-    borderRadius: '4px',
+    padding: '1rem',
+    borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '0.9rem',
+    fontSize: '1rem',
+    fontWeight: '600',
+    minHeight: '50px',
   },
   addButtonDisabled: {
     width: '100%',
     backgroundColor: '#bdc3c7',
     color: 'white',
     border: 'none',
-    padding: '0.75rem',
-    borderRadius: '4px',
+    padding: '1rem',
+    borderRadius: '8px',
     cursor: 'not-allowed',
-    fontSize: '0.9rem',
+    fontSize: '1rem',
+    minHeight: '50px',
   },
+
+  // Cart Sidebar - Mobile
   cartSidebar: {
     backgroundColor: 'white',
-    padding: '1.5rem',
+    padding: '1rem',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     height: 'fit-content',
+    display: 'none', // Hidden on mobile by default
+  },
+  cartSidebarOpen: {
+    display: 'block', // Show when open on mobile
+    position: 'fixed',
+    bottom: '0',
+    left: '0',
+    right: '0',
+    backgroundColor: 'white',
+    borderTop: '2px solid #3498db',
+    zIndex: 1001,
+    maxHeight: '70vh',
+    overflowY: 'auto',
+    borderRadius: '16px 16px 0 0',
+  },
+  cartHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+  },
+  closeCart: {
+    background: 'none',
+    border: 'none',
+    fontSize: '1.2rem',
+    cursor: 'pointer',
+    color: '#666',
   },
   emptyCart: {
     textAlign: 'center',
@@ -711,7 +1049,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
   },
-  cartHeader: {
+  cartInfo: {
     padding: '0.75rem',
     backgroundColor: '#e8f4fd',
     borderRadius: '4px',
@@ -751,21 +1089,21 @@ const styles = {
     backgroundColor: '#3498db',
     color: 'white',
     border: 'none',
-    width: '25px',
-    height: '25px',
-    borderRadius: '4px',
+    width: '35px',
+    height: '35px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '0.8rem',
+    fontSize: '1rem',
   },
   quantityBtnDisabled: {
     backgroundColor: '#bdc3c7',
     color: 'white',
     border: 'none',
-    width: '25px',
-    height: '25px',
-    borderRadius: '4px',
+    width: '35px',
+    height: '35px',
+    borderRadius: '6px',
     cursor: 'not-allowed',
-    fontSize: '0.8rem',
+    fontSize: '1rem',
   },
   quantity: {
     padding: '0 0.5rem',
@@ -776,7 +1114,7 @@ const styles = {
     backgroundColor: '#e74c3c',
     color: 'white',
     border: 'none',
-    padding: '0.25rem 0.5rem',
+    padding: '0.5rem',
     borderRadius: '4px',
     cursor: 'pointer',
     marginLeft: 'auto',
@@ -798,20 +1136,23 @@ const styles = {
     backgroundColor: '#27ae60',
     color: 'white',
     border: 'none',
-    padding: '0.75rem',
-    borderRadius: '4px',
+    padding: '1rem',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '1rem',
+    fontWeight: '600',
   },
   clearButton: {
     backgroundColor: '#e74c3c',
     color: 'white',
     border: 'none',
-    padding: '0.75rem',
-    borderRadius: '4px',
+    padding: '1rem',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '1rem',
   },
+
+  // Welcome Section
   welcomeSection: {
     textAlign: 'center',
     padding: '3rem',
@@ -833,6 +1174,8 @@ const styles = {
     backgroundColor: '#f8f9fa',
     borderRadius: '8px',
   },
+
+  // Success Message
   successMessage: {
     position: 'fixed',
     top: '20px',
@@ -861,6 +1204,8 @@ const styles = {
     cursor: 'pointer',
     marginLeft: 'auto',
   },
+
+  // Loading
   loading: {
     display: 'flex',
     flexDirection: 'column',
@@ -869,6 +1214,57 @@ const styles = {
     height: '100vh',
     fontSize: '1.2rem',
     textAlign: 'center',
+  },
+
+  // Overlay
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 1000,
+  },
+
+  // Media Queries for Desktop
+  '@media (min-width: 768px)': {
+    dashboard: {
+      paddingBottom: '0', // Remove mobile nav space on desktop
+    },
+    mobileNav: {
+      display: 'none', // Hide mobile nav on desktop
+    },
+    nav: {
+      display: 'flex', // Show desktop nav
+    },
+    browseSection: {
+      display: 'grid',
+      gridTemplateColumns: '250px 1fr 300px',
+      gap: '2rem',
+      height: '100%',
+    },
+    sidebar: {
+      display: 'block', // Show sidebar on desktop
+      position: 'static',
+      transform: 'none',
+      width: '100%',
+      maxHeight: '600px',
+    },
+    cartSidebar: {
+      display: 'block', // Show cart on desktop
+      position: 'static',
+      maxHeight: 'none',
+    },
+    mobileShopHeader: {
+      display: 'none', // Hide mobile shop header on desktop
+    },
+    closeSidebar: {
+      display: 'none', // Hide close button on desktop
+    },
+    closeCart: {
+      display: 'none', // Hide close button on desktop
+    },
   },
 };
 

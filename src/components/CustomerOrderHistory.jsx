@@ -1,8 +1,9 @@
-// src/components/CustomerOrderHistory.jsx - OPTIMIZED VERSION
+// src/components/CustomerOrderHistory.jsx - UPDATED WITH ACKNOWLEDGEMENT
 import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import OrderAcknowledgement from './OrderAcknowledgement';
 
 // Utility functions for consistent calculations
 const calculateItemTotal = (item) => {
@@ -20,6 +21,7 @@ const CustomerOrderHistory = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [acknowledgingOrder, setAcknowledgingOrder] = useState(null);
   const auth = getAuth();
 
   // Real-time listener instead of polling
@@ -66,13 +68,14 @@ const CustomerOrderHistory = () => {
     };
   }, [auth.currentUser?.uid]);
 
-  const getStatusBadge = (status, creditRequested, creditApproved) => {
+  const getStatusBadge = (status, creditRequested, creditApproved, deliveryProof) => {
     const statusConfig = {
       'pending_approval': { color: '#f39c12', label: '⏳ Pending Credit Approval', description: 'Waiting for shop to approve your credit request' },
       'confirmed': { color: '#27ae60', label: '✅ Order Confirmed', description: 'Shop has accepted your order' },
       'preparing': { color: '#3498db', label: '👨‍🍳 Preparing Order', description: 'Shop is preparing your items' },
       'ready': { color: '#9b59b6', label: '📦 Ready for Pickup', description: 'Your order is ready for collection' },
-      'completed': { color: '#2c3e50', label: '🎉 Order Completed', description: 'Order successfully delivered/picked up' },
+      'completed': { color: '#2c3e50', label: '📬 Delivery Complete', description: 'Order delivered - please confirm receipt' },
+      'acknowledged': { color: '#27ae60', label: '✅ Order Completed', description: 'Thank you for confirming receipt!' },
       'cancelled': { color: '#e74c3c', label: '❌ Order Cancelled', description: 'Order was cancelled' }
     };
 
@@ -83,6 +86,15 @@ const CustomerOrderHistory = () => {
         color: '#e67e22', 
         label: '💳 Awaiting Credit Approval', 
         description: 'Shop needs to approve your credit payment' 
+      };
+    }
+
+    // Override for acknowledged orders
+    if (deliveryProof?.acknowledged) {
+      statusInfo = { 
+        color: '#27ae60', 
+        label: '✅ Order Completed', 
+        description: `Thank you! You rated ${deliveryProof.rating}⭐` 
       };
     }
 
@@ -138,6 +150,20 @@ const CustomerOrderHistory = () => {
     }
   };
 
+  // Safe check for acknowledgement
+  const canAcknowledgeOrder = (order) => {
+    return order.status === 'completed' && 
+           (!order.deliveryProof || !order.deliveryProof.acknowledged);
+  };
+
+  const isOrderAcknowledged = (order) => {
+    return order.deliveryProof?.acknowledged === true;
+  };
+
+  const handleAcknowledgementComplete = () => {
+    setAcknowledgingOrder(null);
+  };
+
   if (loading) {
     return (
       <div style={styles.loading}>
@@ -172,7 +198,7 @@ const CustomerOrderHistory = () => {
             <span>Total Orders: {orders.length}</span>
             <span>Pending: {orders.filter(o => o.status === 'pending_approval').length}</span>
             <span>Active: {orders.filter(o => ['confirmed', 'preparing', 'ready'].includes(o.status)).length}</span>
-            <span>Completed: {orders.filter(o => o.status === 'completed').length}</span>
+            <span>Completed: {orders.filter(o => o.status === 'completed' || o.status === 'acknowledged').length}</span>
           </div>
           <div style={styles.realTimeIndicator}>
             <span style={styles.liveDot}>●</span>
@@ -205,7 +231,7 @@ const CustomerOrderHistory = () => {
                   <p style={styles.orderDate}>Placed: {formatDate(order.createdAt)}</p>
                 </div>
                 <div style={styles.orderStatus}>
-                  {getStatusBadge(order.status, order.creditRequested, order.creditApproved)}
+                  {getStatusBadge(order.status, order.creditRequested, order.creditApproved, order.deliveryProof)}
                 </div>
               </div>
 
@@ -240,6 +266,34 @@ const CustomerOrderHistory = () => {
                   </div>
                 )}
 
+                {/* ACKNOWLEDGEMENT SECTION */}
+                {canAcknowledgeOrder(order) && (
+                  <div style={styles.acknowledgementSection}>
+                    <h4>✅ Confirm Receipt</h4>
+                    <p>Your order has been delivered. Please confirm you received all items.</p>
+                    <button 
+                      onClick={() => setAcknowledgingOrder(order)}
+                      style={styles.acknowledgeButton}
+                    >
+                      📝 Confirm Order Receipt
+                    </button>
+                  </div>
+                )}
+
+                {/* ACKNOWLEDGEMENT DETAILS */}
+                {isOrderAcknowledged(order) && (
+                  <div style={styles.acknowledgedSection}>
+                    <h4>✅ Order Confirmed</h4>
+                    <p>You confirmed receipt on {formatDate(order.deliveryProof?.acknowledgedAt)}</p>
+                    {order.deliveryProof?.rating > 0 && (
+                      <p>Your rating: {order.deliveryProof.rating} ⭐</p>
+                    )}
+                    {order.deliveryProof?.customerNotes && (
+                      <p>Your notes: "{order.deliveryProof.customerNotes}"</p>
+                    )}
+                  </div>
+                )}
+
                 <div style={styles.orderTimeline}>
                   <h4>📅 Order Timeline:</h4>
                   <div style={styles.timeline}>
@@ -259,6 +313,15 @@ const CustomerOrderHistory = () => {
                         </div>
                       </div>
                     )}
+                    {isOrderAcknowledged(order) && (
+                      <div style={styles.timelineItem}>
+                        <span style={styles.timelineDot}></span>
+                        <div style={styles.timelineContent}>
+                          <strong>Receipt Confirmed</strong>
+                          <span>{formatDate(order.deliveryProof?.acknowledgedAt)}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -274,14 +337,26 @@ const CustomerOrderHistory = () => {
                   <p>🎉 <strong>Ready for Pickup!</strong> Your order is ready for collection at the shop.</p>
                 </div>
               )}
-
-              {order.status === 'completed' && (
-                <div style={styles.completedNotice}>
-                  <p>✅ <strong>Order Completed!</strong> Thank you for your purchase.</p>
-                </div>
-              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ACKNOWLEDGEMENT MODAL */}
+      {acknowledgingOrder && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <OrderAcknowledgement 
+              order={acknowledgingOrder}
+              onAcknowledged={handleAcknowledgementComplete}
+            />
+            <button 
+              onClick={() => setAcknowledgingOrder(null)}
+              style={styles.closeModalButton}
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -289,268 +364,68 @@ const CustomerOrderHistory = () => {
 };
 
 const styles = {
-  container: {
-    padding: '0',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '2rem',
-    flexWrap: 'wrap',
-    gap: '1rem',
-  },
-  headerActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '2rem',
-  },
-  stats: {
-    display: 'flex',
-    gap: '1.5rem',
-    fontSize: '0.9rem',
-    color: '#7f8c8d',
-    flexWrap: 'wrap',
-  },
-  realTimeIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    fontSize: '0.8rem',
-    color: '#27ae60',
-    fontWeight: '600',
-  },
-  liveDot: {
-    color: '#27ae60',
-    fontSize: '1.2rem',
-    animation: 'pulse 1.5s infinite',
-  },
-  refreshButton: {
-    backgroundColor: '#3498db',
-    color: 'white',
-    border: 'none',
-    padding: '0.5rem 1rem',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-  },
-  loading: {
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '3rem',
-    textAlign: 'center',
-    gap: '1rem',
-  },
-  loadingSpinner: {
-    fontSize: '2rem',
-    animation: 'spin 1s linear infinite',
-  },
-  errorContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '3rem',
-    textAlign: 'center',
-    gap: '1rem',
-    backgroundColor: '#f8d7da',
-    color: '#721c24',
-    borderRadius: '8px',
-    margin: '2rem',
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '3rem',
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
-  },
-  emptyTips: {
-    textAlign: 'left',
-    maxWidth: '400px',
-    margin: '0 auto',
-  },
-  tipsList: {
-    textAlign: 'left',
-    marginTop: '1rem',
-    lineHeight: '1.6',
-    paddingLeft: '1.5rem',
-  },
-  ordersList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
-  },
-  orderCard: {
-    backgroundColor: 'white',
-    padding: '1.5rem',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    border: '1px solid #ecf0f1',
-    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-  },
-  orderHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '1.5rem',
-    flexWrap: 'wrap',
-    gap: '1rem',
-    borderBottom: '2px solid #f8f9fa',
-    paddingBottom: '1rem',
-  },
-  orderBasicInfo: {
-    flex: 1,
-  },
-  shopName: {
-    color: '#3498db',
-    fontSize: '1.1rem',
-    margin: '0.25rem 0',
-  },
-  orderDate: {
-    color: '#7f8c8d',
-    fontSize: '0.9rem',
-    margin: 0,
-  },
-  orderStatus: {
-    minWidth: '200px',
-  },
-  statusSection: {
-    textAlign: 'right',
-  },
-  statusDescription: {
-    fontSize: '0.8rem',
-    color: '#7f8c8d',
-    margin: 0,
-    fontStyle: 'italic',
-  },
-  orderDetails: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
-  },
-  itemsSection: {
-    flex: 1,
-  },
-  itemsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-    marginTop: '0.5rem',
-  },
-  orderItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '0.75rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '4px',
-    transition: 'background-color 0.2s ease',
-  },
-  itemName: {
-    flex: 2,
-    fontWeight: '500',
-  },
-  itemQuantity: {
-    flex: 1,
-    textAlign: 'center',
-    color: '#7f8c8d',
-  },
-  itemPrice: {
-    flex: 1,
-    textAlign: 'right',
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  paymentSection: {
-    flex: 1,
-  },
-  paymentDetails: {
-    marginTop: '0.5rem',
-  },
-  paymentBadge: {
+  // ... (keep all your existing styles from previous version)
+
+  // ADD THESE NEW STYLES:
+  acknowledgementSection: {
+    padding: '1rem',
     backgroundColor: '#e8f4fd',
-    color: '#3498db',
-    padding: '0.75rem',
-    borderRadius: '6px',
-    display: 'inline-block',
-    fontWeight: '600',
+    border: '1px solid #3498db',
+    borderRadius: '4px',
     marginBottom: '1rem',
-  },
-  orderTotal: {
-    padding: '1rem',
-    backgroundColor: '#2c3e50',
-    color: 'white',
-    borderRadius: '6px',
-    textAlign: 'center',
-    fontSize: '1.1rem',
-  },
-  notesSection: {
-    padding: '1rem',
-    backgroundColor: '#fff3cd',
-    border: '1px solid #ffeaa7',
-    borderRadius: '4px',
-  },
-  orderNotes: {
-    margin: '0.5rem 0 0 0',
-    fontStyle: 'italic',
-    color: '#856404',
-  },
-  orderTimeline: {
-    padding: '1rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '4px',
-  },
-  timeline: {
-    marginTop: '0.5rem',
-  },
-  timelineItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    marginBottom: '0.5rem',
-  },
-  timelineDot: {
-    width: '12px',
-    height: '12px',
-    backgroundColor: '#3498db',
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-  timelineContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    fontSize: '0.9rem',
-  },
-  pendingNotice: {
-    padding: '1rem',
-    backgroundColor: '#fff3cd',
-    border: '1px solid #ffeaa7',
-    borderRadius: '4px',
-    marginTop: '1rem',
     textAlign: 'center',
   },
-  readyNotice: {
-    padding: '1rem',
-    backgroundColor: '#d1ecf1',
-    border: '1px solid #bee5eb',
-    borderRadius: '4px',
-    marginTop: '1rem',
-    textAlign: 'center',
-  },
-  completedNotice: {
+  acknowledgedSection: {
     padding: '1rem',
     backgroundColor: '#d4edda',
     border: '1px solid #c3e6cb',
     borderRadius: '4px',
-    marginTop: '1rem',
-    textAlign: 'center',
+    marginBottom: '1rem',
     color: '#155724',
+  },
+  acknowledgeButton: {
+    backgroundColor: '#3498db',
+    color: 'white',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '1rem',
+    fontWeight: '600',
+    marginTop: '0.5rem',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    padding: '1rem',
+  },
+  modal: {
+    backgroundColor: 'white',
+    padding: '2rem',
+    borderRadius: '8px',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+    width: '100%',
+    maxWidth: '500px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+  },
+  closeModalButton: {
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    width: '100%',
+    marginTop: '1rem',
   },
 };
 

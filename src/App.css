@@ -60,3 +60,94 @@
 .loading-spinner {
   animation: spin 1s linear infinite;
 }
+
+
+/* Mobile-First Responsive Design */
+* {
+  box-sizing: border-box;
+}
+
+/* Base mobile styles */
+body {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Responsive breakpoints */
+@media (min-width: 768px) {
+  body {
+    font-size: 16px;
+  }
+}
+
+/* Utility classes for responsiveness */
+.container {
+  width: 100%;
+  padding: 0 1rem;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 720px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 960px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .container {
+    max-width: 1140px;
+  }
+}
+
+/* Mobile touch targets */
+button, 
+input, 
+select, 
+textarea {
+  min-height: 44px; /* Minimum touch target size */
+}
+
+/* Hide elements on mobile */
+.mobile-only {
+  display: block;
+}
+
+.desktop-only {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none;
+  }
+  
+  .desktop-only {
+    display: block;
+  }
+}
+
+/* Malayalam language support styles*/
+
+.malayalam-input {
+  font-family: 'Noto Sans Malayalam', sans-serif;
+  font-size: 16px;
+  direction: ltr;
+}
+
+.malayalam-text {
+  font-family: 'Noto Sans Malayalam', sans-serif;
+  font-size: 1.1em;
+  line-height: 1.4;
+}
+
+/* Product name styling for longer Malayalam text */
+.product-name {
+  min-height: 2.8em;
+  line-height: 1.3;
+}

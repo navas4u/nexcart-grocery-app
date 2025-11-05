@@ -6,6 +6,7 @@ import Auth from './components/Auth';
 import ShopOwnerDashboard from './components/ShopOwnerDashboard';
 import './App.css';
 import CustomerDashboard from './components/CustomerDashboard';
+import { LanguageProvider } from './contexts/LanguageContext'; // ADD THIS
 
 function App() {
   const [user, setUser] = useState(null);
@@ -92,12 +93,15 @@ function App() {
   console.log('🎯 Rendering dashboard for:', user.email, 'Role:', userRole);
 
   // Route based on user role
-  if (userRole === 'shop_owner') {
-  return <ShopOwnerDashboard />;
-}
-
-  // Customer dashboard
-  return <CustomerDashboard />;
+  return (
+    <LanguageProvider>
+      {userRole === 'shop_owner' ? (
+        <ShopOwnerDashboard />
+      ) : (
+        <CustomerDashboard />
+      )}
+    </LanguageProvider>
+  );
 }
 
 const styles = {
