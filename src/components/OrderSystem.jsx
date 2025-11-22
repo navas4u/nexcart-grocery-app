@@ -1,90 +1,171 @@
-// src/components/OrderSystem.jsx
-import { calculateOrderTotal, normalizeOrderItems } from '../utils/orderCalculations';
-import { useState } from 'react';
+// src/components/OrderSystem.jsx - UPDATED WITH DELIVERY
+import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, collection, addDoc, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const OrderSystem = ({ cart, shop, onOrderPlaced, onClose }) => {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [creditAmount, setCreditAmount] = useState(0);
   const [cashAmount, setCashAmount] = useState(0);
+  const [customerNote, setCustomerNote] = useState('');
   const [loading, setLoading] = useState(false);
-  const [orderNotes, setOrderNotes] = useState('');
+  
+  // DELIVERY-RELATED STATES
+  const [deliveryType, setDeliveryType] = useState('pickup');
+  const [shopSettings, setShopSettings] = useState(null);
+  const [deliveryAddress, setDeliveryAddress] = useState({
+    street: '',
+    city: '',
+    pincode: '',
+    instructions: ''
+  });
+
   const auth = getAuth();
 
-  const orderTotal = calculateOrderTotal(cart);
-  
-  // Calculate amounts based on payment method
-  const calculateAmounts = (method, creditAmt = 0) => {
-    if (method === 'cash') {
-      setCashAmount(orderTotal);
+  // FETCH SHOP DELIVERY SETTINGS
+  useEffect(() => {
+    if (shop?.id) {
+      fetchShopSettings();
+    }
+  }, [shop]);
+
+  const fetchShopSettings = async () => {
+    try {
+      const shopDoc = await getDoc(doc(db, 'shops', shop.id));
+      if (shopDoc.exists()) {
+        const shopData = shopDoc.data();
+        setShopSettings(shopData);
+        
+        // Set default delivery type based on shop settings
+        if (!shopData.pickupSettings?.allowsPickup && shopData.deliverySettings?.offersDelivery) {
+          setDeliveryType('delivery');
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching shop settings:', error);
+    }
+  };
+
+  // CALCULATE DELIVERY FEE
+  const getDeliveryFee = () => {
+    if (deliveryType !== 'delivery') return 0;
+    if (!shopSettings?.deliverySettings?.offersDelivery) return 0;
+    
+    const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    const freeThreshold = shopSettings.deliverySettings?.freeDeliveryThreshold || 0;
+    
+    // Free delivery if order meets threshold
+    if (freeThreshold > 0 && subtotal >= freeThreshold) {
+      return 0;
+    }
+    
+    return shopSettings.deliverySettings?.deliveryFee || 0;
+  };
+
+  // CALCULATE TOTALS
+  const calculateTotals = () => {
+    const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    const deliveryFee = getDeliveryFee();
+    const total = subtotal + deliveryFee;
+
+    return { subtotal, deliveryFee, total };
+  };
+
+  const { subtotal, deliveryFee, total } = calculateTotals();
+
+  // UPDATE PAYMENT AMOUNTS BASED ON TOTAL
+  useEffect(() => {
+    if (paymentMethod === 'cash') {
+      setCashAmount(total);
       setCreditAmount(0);
-    } else if (method === 'credit') {
+    } else if (paymentMethod === 'credit') {
+      setCreditAmount(total);
       setCashAmount(0);
-      setCreditAmount(orderTotal);
-    } else if (method === 'split') {
-      setCreditAmount(creditAmt);
-      setCashAmount(orderTotal - creditAmt);
+    }
+    // For split payment, keep existing values or set defaults
+  }, [paymentMethod, total]);
+
+  const handleSplitPaymentChange = (type, value) => {
+    const numValue = parseFloat(value) || 0;
+    if (type === 'credit') {
+      setCreditAmount(numValue);
+      setCashAmount(total - numValue);
+    } else {
+      setCashAmount(numValue);
+      setCreditAmount(total - numValue);
     }
   };
 
-  const handlePaymentMethodChange = (method) => {
-    setPaymentMethod(method);
-    calculateAmounts(method);
-  };
-
-  const handleCreditAmountChange = (amount) => {
-    const creditAmt = Math.min(Math.max(0, amount), orderTotal);
-    setCreditAmount(creditAmt);
-    setCashAmount(orderTotal - creditAmt);
-  };
-
-  const placeOrder = async () => {
-    if (paymentMethod === 'split' && creditAmount <= 0) {
-      alert('Please enter a valid credit amount for split payment');
-      return;
+  const validatePayment = () => {
+    if (paymentMethod === 'split_payment') {
+      if (creditAmount + cashAmount !== total) {
+        alert(`Split payment amounts must equal total (₹${total}). Current: Credit ₹${creditAmount} + Cash ₹${cashAmount} = ₹${creditAmount + cashAmount}`);
+        return false;
+      }
+      if (creditAmount < 0 || cashAmount < 0) {
+        alert('Payment amounts cannot be negative');
+        return false;
+      }
     }
+
+    // Validate delivery address if delivery is selected
+    if (deliveryType === 'delivery') {
+      if (!deliveryAddress.street.trim() || !deliveryAddress.city.trim() || !deliveryAddress.pincode.trim()) {
+        alert('Please fill in all required delivery address fields');
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!validatePayment()) return;
 
     setLoading(true);
     try {
       const orderData = {
+        orderId: `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         customerId: auth.currentUser.uid,
         customerEmail: auth.currentUser.email,
         shopId: shop.id,
-        shopName: shop.shopName,
-        items: normalizeOrderItems(cart.map(item => ({
-  productId: item.id,
-  name: item.name,
-  price: item.price,
-  quantity: item.quantity,
-  unit: item.unit
-}))),
-        orderTotal: orderTotal,
+        items: cart.map(item => ({
+          productId: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          total: item.price * item.quantity,
+          unit: item.unit
+        })),
+        // UPDATED: Include delivery calculations
+        subtotal: subtotal,
+        deliveryFee: deliveryFee,
+        totalAmount: total,
+        deliveryType: deliveryType,
+        // Delivery-specific fields
+        ...(deliveryType === 'delivery' && { 
+          deliveryAddress: deliveryAddress 
+        }),
+        // Pickup-specific fields
+        ...(deliveryType === 'pickup' && { 
+          pickupDetails: {
+            instructions: shopSettings?.pickupSettings?.pickupInstructions || 'Please come to the counter for pickup'
+          }
+        }),
+        // Payment fields (existing)
         paymentMethod: paymentMethod,
-        cashAmount: cashAmount,
         creditAmount: creditAmount,
-        creditRequested: paymentMethod !== 'cash',
-        creditApproved: paymentMethod === 'cash', // Auto-approve cash orders
-        status: paymentMethod === 'cash' ? 'confirmed' : 'pending_approval',
-        orderNotes: orderNotes,
+        cashAmount: cashAmount,
+        status: (paymentMethod === 'credit' || paymentMethod === 'split_payment') ? 'pending_approval' : 'confirmed',
+        creditApproved: false, // ✅ FIX: Always false initially for credit-related payments
+        customerNote: customerNote,
         createdAt: new Date(),
         updatedAt: new Date()
       };
 
-      // Create order in Firestore
-      const orderRef = await addDoc(collection(db, 'orders'), orderData);
-
-      // Update product stock levels
-      const updatePromises = cart.map(item => 
-        updateDoc(doc(db, 'products', item.id), {
-          stock: item.stock - item.quantity
-        })
-      );
-      await Promise.all(updatePromises);
-
-      console.log('✅ Order placed successfully!');
-      onOrderPlaced(orderRef.id);
+      await addDoc(collection(db, 'orders'), orderData);
+      onOrderPlaced(orderData.orderId);
       
     } catch (error) {
       console.error('Error placing order:', error);
@@ -94,126 +175,247 @@ const OrderSystem = ({ cart, shop, onOrderPlaced, onClose }) => {
     }
   };
 
+  // Check if shop offers any delivery options
+  const hasDeliveryOptions = () => {
+    return shopSettings?.deliverySettings?.offersDelivery || shopSettings?.pickupSettings?.allowsPickup !== false;
+  };
+
   return (
-    <div style={styles.overlay}>
+    <div style={styles.modalOverlay}>
       <div style={styles.modal}>
-        <div style={styles.header}>
+        <div style={styles.modalHeader}>
           <h2>📦 Place Your Order</h2>
           <button onClick={onClose} style={styles.closeButton}>✕</button>
         </div>
 
+        {/* DELIVERY METHOD SELECTION - NEW SECTION */}
+        {hasDeliveryOptions() && (
+          <div style={styles.deliverySection}>
+            <h3>🚚 Delivery Method</h3>
+            
+            {/* Pickup Option */}
+            {shopSettings?.pickupSettings?.allowsPickup !== false && (
+              <div style={styles.optionGroup}>
+                <label style={styles.optionLabel}>
+                  <input
+                    type="radio"
+                    value="pickup"
+                    checked={deliveryType === 'pickup'}
+                    onChange={(e) => setDeliveryType(e.target.value)}
+                    style={styles.radio}
+                  />
+                  <div style={deliveryType === 'pickup' ? styles.optionSelected : styles.option}>
+                    <span style={styles.optionIcon}>🏪</span>
+                    <div style={styles.optionContent}>
+                      <strong>Pickup</strong>
+                      <small>Collect from {shop.shopName}</small>
+                      {shopSettings?.pickupSettings?.pickupInstructions && (
+                        <small style={styles.instructions}>
+                          {shopSettings.pickupSettings.pickupInstructions}
+                        </small>
+                      )}
+                    </div>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            {/* Delivery Option */}
+            {shopSettings?.deliverySettings?.offersDelivery && (
+              <div style={styles.optionGroup}>
+                <label style={styles.optionLabel}>
+                  <input
+                    type="radio"
+                    value="delivery"
+                    checked={deliveryType === 'delivery'}
+                    onChange={(e) => setDeliveryType(e.target.value)}
+                    style={styles.radio}
+                  />
+                  <div style={deliveryType === 'delivery' ? styles.optionSelected : styles.option}>
+                    <span style={styles.optionIcon}>🚚</span>
+                    <div style={styles.optionContent}>
+                      <strong>Delivery</strong>
+                      <small>
+                        {deliveryFee > 0 ? `₹${deliveryFee} fee` : 'Free delivery'}
+                        {shopSettings.deliverySettings.estimatedDeliveryTime && 
+                          ` • ${shopSettings.deliverySettings.estimatedDeliveryTime}`
+                        }
+                      </small>
+                      {shopSettings.deliverySettings.freeDeliveryThreshold > 0 && (
+                        <small style={styles.freeDeliveryInfo}>
+                          Free delivery on orders above ₹{shopSettings.deliverySettings.freeDeliveryThreshold}
+                        </small>
+                      )}
+                    </div>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            {/* Delivery Address Form */}
+            {deliveryType === 'delivery' && (
+              <div style={styles.addressForm}>
+                <h4>📍 Delivery Address</h4>
+                <input
+                  type="text"
+                  placeholder="Street Address *"
+                  value={deliveryAddress.street}
+                  onChange={(e) => setDeliveryAddress({...deliveryAddress, street: e.target.value})}
+                  style={styles.input}
+                  required
+                />
+                <div style={styles.addressRow}>
+                  <input
+                    type="text"
+                    placeholder="City *"
+                    value={deliveryAddress.city}
+                    onChange={(e) => setDeliveryAddress({...deliveryAddress, city: e.target.value})}
+                    style={styles.input}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Pincode *"
+                    value={deliveryAddress.pincode}
+                    onChange={(e) => setDeliveryAddress({...deliveryAddress, pincode: e.target.value})}
+                    style={styles.input}
+                    required
+                  />
+                </div>
+                <textarea
+                  placeholder="Delivery instructions (optional)"
+                  value={deliveryAddress.instructions}
+                  onChange={(e) => setDeliveryAddress({...deliveryAddress, instructions: e.target.value})}
+                  style={styles.textarea}
+                  rows="3"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ORDER SUMMARY - UPDATED WITH DELIVERY FEE */}
         <div style={styles.orderSummary}>
-          <h3>Order Summary - {shop.shopName}</h3>
-          <div style={styles.itemsList}>
-            {cart.map(item => (
-              <div key={item.id} style={styles.orderItem}>
-                <span style={styles.itemName}>{item.name}</span>
-                <span style={styles.itemQuantity}>{item.quantity} {item.unit}</span>
-                <span style={styles.itemPrice}>${(item.price * item.quantity).toFixed(2)}</span>
+          <h3>📋 Order Summary</h3>
+          <div style={styles.summaryItems}>
+            {cart.map((item, index) => (
+              <div key={index} style={styles.summaryItem}>
+                <span>{item.name} × {item.quantity}</span>
+                <span>₹{(item.price * item.quantity).toFixed(2)}</span>
               </div>
             ))}
           </div>
-          <div style={styles.orderTotal}>
-            <strong>Total: ${orderTotal.toFixed(2)}</strong>
+          <div style={styles.summaryRow}>
+            <span>Subtotal:</span>
+            <span>₹{subtotal.toFixed(2)}</span>
+          </div>
+          {deliveryFee > 0 && (
+            <div style={styles.summaryRow}>
+              <span>Delivery Fee:</span>
+              <span>₹{deliveryFee.toFixed(2)}</span>
+            </div>
+          )}
+          <div style={styles.summaryTotal}>
+            <strong>Total Amount:</strong>
+            <strong>₹{total.toFixed(2)}</strong>
           </div>
         </div>
 
+        {/* PAYMENT METHOD SELECTION (EXISTING) */}
         <div style={styles.paymentSection}>
           <h3>💳 Payment Method</h3>
           <div style={styles.paymentOptions}>
-            <label style={styles.radioLabel}>
+            <label style={styles.paymentOption}>
               <input
                 type="radio"
                 value="cash"
                 checked={paymentMethod === 'cash'}
-                onChange={() => handlePaymentMethodChange('cash')}
-                style={styles.radio}
+                onChange={(e) => setPaymentMethod(e.target.value)}
               />
-              💵 Pay Full Amount in Cash
+              <span>💵 Cash</span>
             </label>
             
-            <label style={styles.radioLabel}>
+            <label style={styles.paymentOption}>
               <input
                 type="radio"
                 value="credit"
                 checked={paymentMethod === 'credit'}
-                onChange={() => handlePaymentMethodChange('credit')}
-                style={styles.radio}
+                onChange={(e) => setPaymentMethod(e.target.value)}
               />
-              🪙 Pay Full Amount with Credit
+              <span>🪙 Full Credit</span>
             </label>
             
-            <label style={styles.radioLabel}>
+            <label style={styles.paymentOption}>
               <input
                 type="radio"
-                value="split"
-                checked={paymentMethod === 'split'}
-                onChange={() => handlePaymentMethodChange('split')}
-                style={styles.radio}
+                value="split_payment"
+                checked={paymentMethod === 'split_payment'}
+                onChange={(e) => setPaymentMethod(e.target.value)}
               />
-              💰 Split Payment (Cash + Credit)
+              <span>💰 Split Payment</span>
             </label>
           </div>
 
-          {paymentMethod === 'split' && (
+          {/* Split Payment Details */}
+          {paymentMethod === 'split_payment' && (
             <div style={styles.splitPayment}>
-              <label>Credit Amount:</label>
-              <div style={styles.amountInput}>
-                <span style={styles.currency}>$</span>
+              <div style={styles.splitInputGroup}>
+                <label>Credit Amount (₹)</label>
                 <input
                   type="number"
-                  step="0.01"
-                  min="0"
-                  max={orderTotal}
                   value={creditAmount}
-                  onChange={(e) => handleCreditAmountChange(parseFloat(e.target.value) || 0)}
-                  style={styles.input}
+                  onChange={(e) => handleSplitPaymentChange('credit', e.target.value)}
+                  style={styles.splitInput}
+                  min="0"
+                  max={total}
                 />
               </div>
-              <div style={styles.amountBreakdown}>
-                <span>Credit: ${creditAmount.toFixed(2)}</span>
-                <span>Cash: ${cashAmount.toFixed(2)}</span>
+              <div style={styles.splitInputGroup}>
+                <label>Cash Amount (₹)</label>
+                <input
+                  type="number"
+                  value={cashAmount}
+                  onChange={(e) => handleSplitPaymentChange('cash', e.target.value)}
+                  style={styles.splitInput}
+                  min="0"
+                  max={total}
+                />
               </div>
-            </div>
-          )}
-
-          {paymentMethod === 'credit' && (
-            <div style={styles.creditNotice}>
-              <p>🔒 Your order will require approval from {shop.shopName} before processing.</p>
+              <div style={styles.splitTotal}>
+                Credit: ₹{creditAmount.toFixed(2)} + Cash: ₹{cashAmount.toFixed(2)} = ₹{(creditAmount + cashAmount).toFixed(2)}
+              </div>
             </div>
           )}
         </div>
 
+        {/* CUSTOMER NOTES (EXISTING) */}
         <div style={styles.notesSection}>
-          <label>Order Notes (Optional):</label>
+          <h3>📝 Order Notes (Optional)</h3>
           <textarea
-            value={orderNotes}
-            onChange={(e) => setOrderNotes(e.target.value)}
-            placeholder="Any special instructions for your order..."
-            style={styles.notesInput}
+            value={customerNote}
+            onChange={(e) => setCustomerNote(e.target.value)}
+            placeholder="Any special instructions or requests..."
+            style={styles.notesTextarea}
             rows="3"
           />
         </div>
 
-        <div style={styles.actions}>
-          <button onClick={onClose} style={styles.cancelButton}>
-            Cancel
-          </button>
-          <button 
-            onClick={placeOrder}
-            disabled={loading || orderTotal === 0}
-            style={loading ? styles.buttonDisabled : styles.placeOrderButton}
-          >
-            {loading ? 'Placing Order...' : '📦 Place Order'}
-          </button>
-        </div>
+        {/* PLACE ORDER BUTTON */}
+        <button 
+          onClick={handlePlaceOrder}
+          disabled={loading || cart.length === 0}
+          style={loading || cart.length === 0 ? styles.placeOrderButtonDisabled : styles.placeOrderButton}
+        >
+          {loading ? '⏳ Placing Order...' : `📦 Place Order - ₹${total.toFixed(2)}`}
+        </button>
       </div>
     </div>
   );
 };
 
+// STYLES - ADD DELIVERY STYLES TO YOUR EXISTING STYLES
 const styles = {
-  overlay: {
+  modalOverlay: {
     position: 'fixed',
     top: 0,
     left: 0,
@@ -229,14 +431,14 @@ const styles = {
   modal: {
     backgroundColor: 'white',
     padding: '2rem',
-    borderRadius: '8px',
+    borderRadius: '12px',
     boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
     width: '100%',
     maxWidth: '500px',
     maxHeight: '90vh',
     overflowY: 'auto',
   },
-  header: {
+  modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -251,57 +453,138 @@ const styles = {
     cursor: 'pointer',
     color: '#666',
   },
-  orderSummary: {
+  
+  // DELIVERY STYLES
+  deliverySection: {
     marginBottom: '1.5rem',
-    padding: '1rem',
+    padding: '1.5rem',
     backgroundColor: '#f8f9fa',
-    borderRadius: '6px',
+    borderRadius: '8px',
+    border: '1px solid #e9ecef',
   },
-  itemsList: {
+  optionGroup: {
+    marginBottom: '0.75rem',
+  },
+  optionLabel: {
+    display: 'block',
+    cursor: 'pointer',
+  },
+  radio: {
+    display: 'none',
+  },
+  option: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    padding: '1rem',
+    border: '2px solid #dee2e6',
+    borderRadius: '8px',
+    backgroundColor: 'white',
+    transition: 'all 0.2s ease',
+  },
+  optionSelected: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    padding: '1rem',
+    border: '2px solid #3498db',
+    borderRadius: '8px',
+    backgroundColor: '#e8f4fd',
+    transition: 'all 0.2s ease',
+  },
+  optionIcon: {
+    fontSize: '1.5rem',
+  },
+  optionContent: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.5rem',
-    margin: '1rem 0',
+    gap: '0.25rem',
   },
-  orderItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '0.5rem 0',
-    borderBottom: '1px solid #e9ecef',
+  instructions: {
+    color: '#6c757d',
+    fontStyle: 'italic',
+    fontSize: '0.8rem',
   },
-  itemName: {
-    flex: 2,
+  freeDeliveryInfo: {
+    color: '#28a745',
+    fontSize: '0.8rem',
     fontWeight: '500',
   },
-  itemQuantity: {
-    flex: 1,
-    textAlign: 'center',
-    color: '#7f8c8d',
+  addressForm: {
+    marginTop: '1rem',
+    padding: '1rem',
+    backgroundColor: 'white',
+    borderRadius: '6px',
+    border: '1px solid #dee2e6',
   },
-  itemPrice: {
-    flex: 1,
-    textAlign: 'right',
-    fontWeight: '600',
+  addressRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '0.75rem',
+    marginBottom: '0.75rem',
   },
-  orderTotal: {
-    textAlign: 'right',
-    fontSize: '1.2rem',
+  input: {
+    width: '100%',
+    padding: '0.75rem',
+    border: '1px solid #ced4da',
+    borderRadius: '4px',
+    fontSize: '1rem',
+    marginBottom: '0.75rem',
+  },
+  textarea: {
+    width: '100%',
+    padding: '0.75rem',
+    border: '1px solid #ced4da',
+    borderRadius: '4px',
+    fontSize: '1rem',
+    resize: 'vertical',
+    fontFamily: 'inherit',
+    minHeight: '80px',
+  },
+  
+  // ORDER SUMMARY STYLES
+  orderSummary: {
+    marginBottom: '1.5rem',
+    padding: '1.5rem',
+    backgroundColor: '#f8f9fa',
+    borderRadius: '8px',
+  },
+  summaryItems: {
+    marginBottom: '1rem',
+  },
+  summaryItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: '0.5rem',
+    fontSize: '0.9rem',
+  },
+  summaryRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: '0.5rem',
+    color: '#495057',
+  },
+  summaryTotal: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    paddingTop: '1rem',
+    borderTop: '2px solid #e9ecef',
+    fontSize: '1.1rem',
     fontWeight: 'bold',
     color: '#2c3e50',
-    borderTop: '2px solid #e9ecef',
-    paddingTop: '0.5rem',
   },
+  
+  // PAYMENT STYLES (EXISTING)
   paymentSection: {
     marginBottom: '1.5rem',
   },
   paymentOptions: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem',
-    marginTop: '1rem',
+    gap: '0.75rem',
+    marginBottom: '1rem',
   },
-  radioLabel: {
+  paymentOption: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
@@ -309,90 +592,64 @@ const styles = {
     padding: '0.75rem',
     border: '1px solid #ddd',
     borderRadius: '4px',
-    transition: 'all 0.3s ease',
-  },
-  radio: {
-    margin: 0,
   },
   splitPayment: {
-    marginTop: '1rem',
     padding: '1rem',
-    backgroundColor: '#e8f4fd',
+    backgroundColor: '#f8f9fa',
     borderRadius: '4px',
-    border: '1px solid #3498db',
   },
-  amountInput: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    margin: '0.5rem 0',
+  splitInputGroup: {
+    marginBottom: '0.75rem',
   },
-  currency: {
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  input: {
+  splitInput: {
+    width: '100%',
     padding: '0.5rem',
-    border: '1px solid #ddd',
+    border: '1px solid #ced4da',
     borderRadius: '4px',
-    fontSize: '1rem',
-    width: '100px',
   },
-  amountBreakdown: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '0.9rem',
-    color: '#7f8c8d',
+  splitTotal: {
+    textAlign: 'center',
+    fontWeight: '600',
+    color: '#495057',
   },
-  creditNotice: {
-    padding: '1rem',
-    backgroundColor: '#fff3cd',
-    border: '1px solid #ffeaa7',
-    borderRadius: '4px',
-    marginTop: '1rem',
-  },
+  
+  // NOTES STYLES (EXISTING)
   notesSection: {
     marginBottom: '1.5rem',
   },
-  notesInput: {
+  notesTextarea: {
     width: '100%',
     padding: '0.75rem',
-    border: '1px solid #ddd',
+    border: '1px solid #ced4da',
     borderRadius: '4px',
     fontSize: '1rem',
-    marginTop: '0.5rem',
     resize: 'vertical',
+    fontFamily: 'inherit',
+    minHeight: '80px',
   },
-  actions: {
-    display: 'flex',
-    gap: '1rem',
-    justifyContent: 'flex-end',
-  },
-  cancelButton: {
-    backgroundColor: '#95a5a6',
-    color: 'white',
-    border: 'none',
-    padding: '0.75rem 1.5rem',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
+  
+  // BUTTON STYLES
   placeOrderButton: {
+    width: '100%',
     backgroundColor: '#27ae60',
     color: 'white',
     border: 'none',
-    padding: '0.75rem 1.5rem',
-    borderRadius: '4px',
+    padding: '1rem 2rem',
+    borderRadius: '6px',
+    fontSize: '1.1rem',
+    fontWeight: '600',
     cursor: 'pointer',
-    fontSize: '1rem',
   },
-  buttonDisabled: {
+  placeOrderButtonDisabled: {
+    width: '100%',
     backgroundColor: '#bdc3c7',
     color: 'white',
     border: 'none',
-    padding: '0.75rem 1.5rem',
-    borderRadius: '4px',
+    padding: '1rem 2rem',
+    borderRadius: '6px',
+    fontSize: '1.1rem',
+    fontWeight: '600',
     cursor: 'not-allowed',
-    fontSize: '1rem',
   },
 };
 

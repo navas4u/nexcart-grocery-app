@@ -296,7 +296,7 @@ const CustomerDashboard = () => {
           👤 My Profile
         </button>
         <div style={styles.cartSummary}>
-          🛒 Cart: {cart.length} items | ${getCartTotal().toFixed(2)}
+          🛒 Cart: {cart.length} items | ₹{getCartTotal().toFixed(2)}
           <button 
             onClick={handlePlaceOrder}
             style={styles.placeOrderBtn}
@@ -408,7 +408,7 @@ const CustomerDashboard = () => {
                                 </span>
                               </div>
                               <div style={styles.detail}>
-                                <strong>Price:</strong> ${product.price} / {product.unit}
+                                <strong>Price:</strong> ₹{product.price} / {product.unit}
                               </div>
                               <div style={styles.detail}>
                                 <strong>Stock:</strong> 
@@ -492,8 +492,8 @@ const CustomerDashboard = () => {
                       <div key={item.id} style={styles.cartItem}>
                         <div style={styles.cartItemInfo}>
                           <strong>{item.name}</strong>
-                          <span>${item.price} × {item.quantity}</span>
-                          <span>Total: ${calculateItemTotal(item)}</span>
+                          <span>₹{item.price} × {item.quantity}</span>
+                          <span>Total: ₹{calculateItemTotal(item)}</span>
                         </div>
                         <div style={styles.cartItemActions}>
                           <button 
@@ -522,7 +522,7 @@ const CustomerDashboard = () => {
                   </div>
                   
                   <div style={styles.cartTotal}>
-                    <strong>Total: ${getCartTotal().toFixed(2)}</strong>
+                    <strong>Total: ₹{getCartTotal().toFixed(2)}</strong>
                   </div>
                   
                   <div style={styles.cartActions}>

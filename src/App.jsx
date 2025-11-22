@@ -1,12 +1,27 @@
-// App.jsx - DEBUGGED VERSION
+// ==============================================
+// 🏪 APP.JSX - CORRECTED VERSION
+// ==============================================
+
 import { useState, useEffect } from 'react';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
+
+// Context Providers
+import { LanguageProvider } from './contexts/LanguageContext';
+import { AdminProvider } from './contexts/AdminContext'; // 🆕 ADMIN PROVIDER
+
+// Components
 import Auth from './components/Auth';
 import ShopOwnerDashboard from './components/ShopOwnerDashboard';
-import './App.css';
 import CustomerDashboard from './components/CustomerDashboard';
-import { LanguageProvider } from './contexts/LanguageContext'; // ADD THIS
+
+// 🆕 NEW ADMIN COMPONENTS
+import AdminLogin from './components/AdminLogin';
+import AdminRoute from './components/AdminRoute';
+import AdminDashboard from './components/AdminDashboard';
+import CommissionManager from './components/CommissionManager';
+
+import './App.css';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -65,6 +80,10 @@ function App() {
     };
   }, []);
 
+  // ==============================================
+  // 🎯 ROUTE RENDERING LOGIC
+  // ==============================================
+
   // Show errors
   if (error) {
     return (
@@ -85,24 +104,91 @@ function App() {
     );
   }
 
-  if (!user) {
-    console.log('🎯 Rendering Auth component');
-    return <Auth />;
+  // ==============================================
+  // 🔐 CHECK CURRENT PATH
+  // ==============================================
+  const currentPath = window.location.pathname;
+  console.log('📍 Current path:', currentPath);
+
+  // ==============================================
+  // 🏢 ADMIN ROUTES (Handle First)
+  // ==============================================
+  
+  // Admin Login Route
+  if (currentPath === '/admin-login') {
+    console.log('🎯 Rendering Admin Login');
+    return (
+      <LanguageProvider>
+        <AdminProvider>
+          <AdminLogin />
+        </AdminProvider>
+      </LanguageProvider>
+    );
   }
-
-  console.log('🎯 Rendering dashboard for:', user.email, 'Role:', userRole);
-
-  // Route based on user role
+  
+ // Commission Manager Route
+  if (currentPath === '/admin/commissions') {
+  console.log('🎯 Rendering Commission Manager');
   return (
     <LanguageProvider>
-      {userRole === 'shop_owner' ? (
-        <ShopOwnerDashboard />
-      ) : (
-        <CustomerDashboard />
-      )}
+      <AdminProvider>
+        <AdminRoute>
+          <CommissionManager />
+        </AdminRoute>
+      </AdminProvider>
     </LanguageProvider>
   );
 }
+
+  // Admin Dashboard Route
+  if (currentPath === '/admin') {
+    console.log('🎯 Rendering Admin Dashboard');
+    return (
+      <LanguageProvider>
+        <AdminProvider>
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        </AdminProvider>
+      </LanguageProvider>
+    );
+  }
+
+  // ==============================================
+  // 👥 REGULAR USER ROUTES
+  // ==============================================
+  
+  // If no user, show main auth
+  if (!user) {
+    console.log('🎯 Rendering Auth component');
+    return (
+      <LanguageProvider>
+        <AdminProvider>
+          <Auth />
+        </AdminProvider>
+      </LanguageProvider>
+    );
+  }
+
+  console.log('🎯 User authenticated:', user.email, 'Role:', userRole);
+
+  // Show appropriate dashboard based on role
+  return (
+    <LanguageProvider>
+      <AdminProvider>
+        {userRole === 'shop_owner' ? (
+          <ShopOwnerDashboard />
+        ) : (
+          <CustomerDashboard />
+        )}
+      </AdminProvider>
+    </LanguageProvider>
+  );
+}
+
+// ==============================================
+// 🎨 STYLES
+// ==============================================
 
 const styles = {
   loading: {
@@ -123,28 +209,6 @@ const styles = {
     padding: '2rem',
     textAlign: 'center',
   },
-  customerDashboard: {
-    padding: '2rem',
-    backgroundColor: '#f5f5f5',
-    minHeight: '100vh',
-  },
-  welcomeCard: {
-    backgroundColor: 'white',
-    padding: '2rem',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    textAlign: 'center',
-    maxWidth: '500px',
-    margin: '0 auto',
-  },
-  logoutBtn: {
-    backgroundColor: '#e74c3c',
-    color: 'white',
-    border: 'none',
-    padding: '0.75rem 1.5rem',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    marginTop: '1rem',
-  },
 };
+
 export default App;

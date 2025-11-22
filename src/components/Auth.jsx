@@ -56,7 +56,6 @@ const Auth = () => {
 
         // Also save to localStorage for immediate access
         localStorage.setItem(`userRole_${user.uid}`, role);
-        
         console.log('User registered with role:', role);
       }
     } catch (error) {

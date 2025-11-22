@@ -1,26 +1,212 @@
-// src/components/ShopOwnerDashboard.jsx - MOBILE RESPONSIVE VERSION
+// src/components/ShopOwnerDashboard.jsx - COMPLETE READY-TO-USE VERSION
 import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, getDocs, query, where, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import ShopSetup from './ShopSetup';
 import InventoryManager from './InventoryManager';
 import OrderManagement from './OrderManagement';
-import { useLanguage } from '../contexts/LanguageContext'; // IMPORT LANGUAGE CONTEXT
+import CustomerCreditManager from './CustomerCreditManager';
+import { useLanguage } from '../contexts/LanguageContext';
+import ReturnPolicyManager from './ReturnPolicyManager';
+import QuickCreditSales from './QuickCreditSales'; // New component for quick sales
 
+// ============================================================================
+// DELIVERY SETTINGS COMPONENT - Manages delivery and pickup configurations
+// ============================================================================
+const DeliverySettings = ({ shopId }) => {
+  const [settings, setSettings] = useState({
+    offersDelivery: false,
+    deliveryFee: 0,
+    freeDeliveryThreshold: 0,
+    estimatedDeliveryTime: "30-45 minutes",
+    allowsPickup: true,
+    pickupInstructions: "Please come to the counter for pickup"
+  });
+  const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
+  // Load existing delivery settings when shopId changes
+  useEffect(() => {
+    if (shopId) {
+      loadExistingSettings();
+    }
+  }, [shopId]);
+
+  // Fetch current delivery settings from Firestore
+  const loadExistingSettings = async () => {
+    try {
+      const shopDoc = await getDoc(doc(db, 'shops', shopId));
+      if (shopDoc.exists()) {
+        const shopData = shopDoc.data();
+        
+        setSettings({
+          offersDelivery: shopData.deliverySettings?.offersDelivery || false,
+          deliveryFee: shopData.deliverySettings?.deliveryFee || 0,
+          freeDeliveryThreshold: shopData.deliverySettings?.freeDeliveryThreshold || 0,
+          estimatedDeliveryTime: shopData.deliverySettings?.estimatedDeliveryTime || "30-45 minutes",
+          allowsPickup: shopData.pickupSettings?.allowsPickup !== false,
+          pickupInstructions: shopData.pickupSettings?.pickupInstructions || "Please come to the counter for pickup"
+        });
+      }
+      setInitialized(true);
+    } catch (error) {
+      console.error('Error loading delivery settings:', error);
+      setInitialized(true);
+    }
+  };
+
+  // Save delivery settings to Firestore
+  const saveSettings = async () => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'shops', shopId), {
+        deliverySettings: {
+          offersDelivery: settings.offersDelivery,
+          deliveryFee: Number(settings.deliveryFee),
+          freeDeliveryThreshold: Number(settings.freeDeliveryThreshold),
+          estimatedDeliveryTime: settings.estimatedDeliveryTime
+        },
+        pickupSettings: {
+          allowsPickup: settings.allowsPickup,
+          pickupInstructions: settings.pickupInstructions
+        }
+      });
+      alert('✅ Delivery settings saved!');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('❌ Error saving settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!initialized) {
+    return <div style={styles.loading}>Loading delivery settings...</div>;
+  }
+
+  return (
+    <div style={styles.settingsContainer}>
+      <h3>🚚 Delivery & Pickup Settings</h3>
+      
+      {/* Delivery Service Toggle Section */}
+      <div style={styles.section}>
+        <label style={styles.toggleLabel}>
+          <input
+            type="checkbox"
+            checked={settings.offersDelivery}
+            onChange={(e) => setSettings({...settings, offersDelivery: e.target.checked})}
+          />
+          Offer Delivery Service
+        </label>
+
+        {settings.offersDelivery && (
+          <div style={styles.deliveryDetails}>
+            <div style={styles.inputGroup}>
+              <label>Delivery Fee (₹)</label>
+              <input
+                type="number"
+                value={settings.deliveryFee}
+                onChange={(e) => setSettings({...settings, deliveryFee: e.target.value})}
+                style={styles.input}
+                min="0"
+                step="5"
+              />
+            </div>
+            
+            <div style={styles.inputGroup}>
+              <label>Free Delivery Above (₹) - Optional</label>
+              <input
+                type="number"
+                value={settings.freeDeliveryThreshold}
+                onChange={(e) => setSettings({...settings, freeDeliveryThreshold: e.target.value})}
+                style={styles.input}
+                min="0"
+                step="50"
+                placeholder="0 for no free delivery"
+              />
+              <small style={styles.helpText}>Free delivery will be applied when order total reaches this amount</small>
+            </div>
+            
+            <div style={styles.inputGroup}>
+              <label>Estimated Delivery Time</label>
+              <input
+                type="text"
+                value={settings.estimatedDeliveryTime}
+                onChange={(e) => setSettings({...settings, estimatedDeliveryTime: e.target.value})}
+                style={styles.input}
+                placeholder="e.g., 30-45 minutes"
+              />
+              <small style={styles.helpText}>This will be shown to customers</small>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Pickup Service Toggle Section */}
+      <div style={styles.section}>
+        <label style={styles.toggleLabel}>
+          <input
+            type="checkbox"
+            checked={settings.allowsPickup}
+            onChange={(e) => setSettings({...settings, allowsPickup: e.target.checked})}
+          />
+          Allow Pickup Orders
+        </label>
+
+        {settings.allowsPickup && (
+          <div style={styles.inputGroup}>
+            <label>Pickup Instructions</label>
+            <textarea
+              value={settings.pickupInstructions}
+              onChange={(e) => setSettings({...settings, pickupInstructions: e.target.value})}
+              style={styles.textarea}
+              placeholder="Instructions for customers when picking up orders"
+              rows="3"
+            />
+            <small style={styles.helpText}>These instructions will be shown to customers</small>
+          </div>
+        )}
+      </div>
+
+      <div style={styles.note}>
+        <strong>💡 Note:</strong> Customers will see only the options you enable above. 
+        If both are disabled, customers won't be able to place orders.
+      </div>
+
+      <button 
+        onClick={saveSettings}
+        disabled={loading}
+        style={loading ? styles.buttonDisabled : styles.saveButton}
+      >
+        {loading ? '💾 Saving...' : '💾 Save Delivery Settings'}
+      </button>
+    </div>
+  );
+};
+
+// ============================================================================
+// MAIN SHOP OWNER DASHBOARD COMPONENT - Central hub for shop management
+// ============================================================================
 const ShopOwnerDashboard = () => {
+  // State management for dashboard functionality
   const [currentView, setCurrentView] = useState('overview');
   const [shopData, setShopData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const auth = getAuth();
-  const { language, changeLanguage, isMalayalam } = useLanguage(); // USE LANGUAGE CONTEXT 
   
+
+  // 🆕 NEW: Quick Credit Sales state
+  const [showQuickSales, setShowQuickSales] = useState(false); // Control sales modal visibility
+  const auth = getAuth();
+  const { language, changeLanguage, isMalayalam } = useLanguage();
+  
+  // Check if shop is setup when component mounts
   useEffect(() => {
     checkShopSetup();
   }, []);
 
+  // Verify shop setup status and load shop data
   const checkShopSetup = async () => {
     try {
       const user = auth.currentUser;
@@ -40,10 +226,18 @@ const ShopOwnerDashboard = () => {
     }
   };
 
+  // 🆕 UPDATED: Render appropriate view component based on current selection
   const renderView = () => {
     switch (currentView) {
       case 'overview':
-        return <DashboardOverview shopData={shopData} shopId={auth.currentUser?.uid} />;
+        return (
+          <DashboardOverview 
+            shopData={shopData} 
+            shopId={auth.currentUser?.uid}
+            // 🆕 PASS PROP FOR QUICK SALES
+          onShowQuickSales={() => setShowQuickSales(true)}
+          />
+        );
       case 'setup':
         return <ShopSetup onSetupComplete={checkShopSetup} />;
       case 'inventory':
@@ -52,26 +246,36 @@ const ShopOwnerDashboard = () => {
         return <OrderManagement shopId={auth.currentUser.uid} />;
       case 'customers':
         return <CustomerCreditManager shopId={auth.currentUser.uid} />;
+      case 'delivery':
+        return (
+          <div style={styles.deliverySection}>
+            <DeliverySettings shopId={auth.currentUser.uid} />
+            <div style={styles.section}>
+              <ReturnPolicyManager shopId={auth.currentUser.uid} />
+            </div>
+          </div>
+        );
       default:
         return <DashboardOverview shopData={shopData} shopId={auth.currentUser?.uid} />;
     }
   };
 
-  // Mobile menu toggle
+  // Toggle mobile navigation menu
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
 
+  // Handle view change and close mobile menu
   const handleViewChange = (view) => {
     setCurrentView(view);
-    setIsMobileMenuOpen(false); // Close mobile menu after selection
+    setIsMobileMenuOpen(false);
   };
 
   if (loading) return <div style={styles.loading}>Loading Dashboard...</div>;
 
   return (
     <div style={styles.dashboard}>
-      {/* header with language support */}
+      {/* Header Section with navigation and user info */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <button 
@@ -107,7 +311,7 @@ const ShopOwnerDashboard = () => {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* Mobile Navigation Menu - Hidden on desktop */}
       <div style={{
         ...styles.mobileNav,
         ...(isMobileMenuOpen && styles.mobileNavOpen)
@@ -140,9 +344,16 @@ const ShopOwnerDashboard = () => {
           <span style={styles.mobileNavIcon}>👥</span>
           <span style={styles.mobileNavText}>Customers</span>
         </button>
+        <button 
+            onClick={() => handleViewChange('delivery')}
+            style={currentView === 'delivery' ? styles.mobileNavBtnActive : styles.mobileNavBtn}
+          >
+            <span style={styles.mobileNavIcon}>🚚</span>
+            <span style={styles.mobileNavText}>Delivery & Returns</span>
+          </button>
       </div>
 
-      {/* Desktop Navigation */}
+      {/* Desktop Navigation - Hidden on mobile */}
       <nav style={styles.nav}>
         <button 
           onClick={() => setCurrentView('overview')}
@@ -168,14 +379,33 @@ const ShopOwnerDashboard = () => {
         >
           👥 Customer Credits
         </button>
+        <button 
+          onClick={() => setCurrentView('delivery')}
+          style={currentView === 'delivery' ? styles.navBtnActive : styles.navBtn}
+        >
+          🚚 Delivery & Returns
+        </button>
       </nav>
 
-      {/* Main Content */}
+      {/* Main Content Area - Renders selected view component */}
       <main style={styles.main}>
         {renderView()}
       </main>
 
-      {/* Mobile Overlay */}
+      {/* 🆕 NEW: QUICK CREDIT SALES MODAL */}
+      {showQuickSales && (
+        <QuickCreditSales 
+          shopId={auth.currentUser?.uid} // Pass shop ID for data isolation
+          onSaleCompleted={(saleData) => {
+            // Handle successful sale completion
+            console.log('Sale completed:', saleData);
+            // You can refresh dashboard data here if needed
+          }}
+          onClose={() => setShowQuickSales(false)} // Close modal
+        />
+      )}
+      
+      {/* Mobile Menu Overlay - Darkens background when menu is open */}
       {isMobileMenuOpen && (
         <div 
           style={styles.overlay}
@@ -186,8 +416,10 @@ const ShopOwnerDashboard = () => {
   );
 };
 
-// Dashboard Overview Component (Updated for mobile)
-const DashboardOverview = ({ shopData, shopId }) => {
+// ============================================================================
+// DASHBOARD OVERVIEW COMPONENT - Main dashboard landing page
+// ============================================================================
+const DashboardOverview = ({ shopData, shopId,onShowQuickSales }) => {
   const [stats, setStats] = useState({
     totalProducts: 0,
     pendingOrders: 0,
@@ -195,15 +427,15 @@ const DashboardOverview = ({ shopData, shopId }) => {
     totalRevenue: 0
   });
 
+  // Fetch dashboard statistics when shopId is available
   useEffect(() => {
     if (shopId) {
       fetchDashboardStats();
     }
   }, [shopId]);
 
+  // Mock function to fetch dashboard statistics
   const fetchDashboardStats = async () => {
-    // This would query Firestore for actual stats
-    // For now, using placeholder data
     setStats({
       totalProducts: 25,
       pendingOrders: 8,
@@ -216,7 +448,7 @@ const DashboardOverview = ({ shopData, shopId }) => {
     <div style={styles.overview}>
       <h2>Store Overview</h2>
       
-      {/* Stats Grid - Responsive */}
+      {/* Statistics Grid - Shows key business metrics */}
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <div style={styles.statIcon}>📦</div>
@@ -235,11 +467,12 @@ const DashboardOverview = ({ shopData, shopId }) => {
         </div>
         <div style={styles.statCard}>
           <div style={styles.statIcon}>💰</div>
-          <div style={styles.statNumber}>${stats.totalRevenue.toLocaleString()}</div>
+          <div style={styles.statNumber}>₹{stats.totalRevenue.toLocaleString()}</div>
           <div style={styles.statLabel}>Total Revenue</div>
         </div>
       </div>
       
+      {/* Store Information Section - Shows shop details */}
       <div style={styles.storeInfo}>
         <h3>Store Information</h3>
         <div style={styles.infoGrid}>
@@ -264,31 +497,37 @@ const DashboardOverview = ({ shopData, shopId }) => {
         </div>
       </div>
 
+      {/* Quick Actions Section - Fast access to common tasks */}
       <div style={styles.quickActions}>
         <h3>Quick Actions</h3>
         <div style={styles.actionButtons}>
-          <button style={styles.actionBtn}>Add Products</button>
-          <button style={styles.actionBtn}>View Orders</button>
-          <button style={styles.actionBtn}>Manage Customers</button>
-        </div>
+        {/* 🆕 NEW: Quick Credit Sales Button */}
+        <button 
+          onClick={onShowQuickSales}
+          style={styles.quickSalesBtn}
+        >
+          💰 Quick Credit Sale
+        </button>
+        <button style={styles.actionBtn}>Add Products</button>
+        <button style={styles.actionBtn}>View Orders</button>
+        <button style={styles.actionBtn}>Manage Customers</button>
+          </div>
       </div>
     </div>
   );
 };
 
-// Placeholder Components
-const CustomerCreditManager = ({ shopId }) => {
-  return (
-    <div style={styles.comingSoon}>
-      <h2>👥 Customer Credit Management</h2>
-      <p>This feature is coming soon!</p>
-    </div>
-  );
-};
-
-// MOBILE-RESPONSIVE STYLES
-// UPDATED STYLES WITH LANGUAGE SWITCHER
+// ============================================================================
+// COMPLETE STYLES OBJECT - All CSS styles for the dashboard
+// ============================================================================
 const styles = {
+  deliverySection: {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2rem',
+  maxWidth: '800px',
+  margin: '0 auto',
+  },
   dashboard: {
     minHeight: '100vh',
     backgroundColor: '#f5f5f5',
@@ -361,8 +600,6 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.9rem',
   },
-
-  // Mobile Navigation
   mobileNav: {
     position: 'fixed',
     top: 0,
@@ -417,8 +654,6 @@ const styles = {
   mobileNavText: {
     fontSize: '1rem',
   },
-
-  // Desktop Navigation
   nav: {
     backgroundColor: 'white',
     padding: '1rem',
@@ -444,14 +679,10 @@ const styles = {
     cursor: 'pointer',
     fontSize: '1rem',
   },
-
-  // Main Content
   main: {
     padding: '1rem',
     minHeight: 'calc(100vh - 150px)',
   },
-
-  // Overview Styles
   overview: {
     backgroundColor: 'white',
     padding: '1.5rem',
@@ -527,19 +758,37 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '1rem',
-    minHeight: '44px', // Touch target
+    minHeight: '44px',
   },
-
-  // Coming Soon
-  comingSoon: {
-    backgroundColor: 'white',
-    padding: '3rem',
-    borderRadius: '8px',
-    textAlign: 'center',
+  // 🆕 NEW STYLE FOR QUICK CUSTOMER REGISTRATION BUTTON
+  quickActionBtn: {
+    backgroundColor: '#9b59b6', // Purple color for distinction
+    color: 'white',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '1rem',
+    minHeight: '44px',
+    fontWeight: '600',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    transition: 'all 0.3s ease',
   },
-
-  // Loading
+  // 🆕 NEW STYLE FOR QUICK CREDIT SALES BUTTO
+  // // 🆕 NEW: Quick Credit Sales Button Style (Green)
+  quickSalesBtn: {
+    backgroundColor: '#27ae60', // Green color for sales action
+    color: 'white',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '1rem',
+    minHeight: '44px',
+    fontWeight: '600',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    transition: 'all 0.3s ease',
+  },
   loading: {
     display: 'flex',
     justifyContent: 'center',
@@ -547,8 +796,6 @@ const styles = {
     height: '100vh',
     fontSize: '1.2rem',
   },
-
-  // Overlay
   overlay: {
     position: 'fixed',
     top: 0,
@@ -558,17 +805,102 @@ const styles = {
     backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 1000,
   },
-
-  // Media Queries for Desktop
+  // DELIVERY SETTINGS STYLES
+  settingsContainer: {
+    backgroundColor: 'white',
+    padding: '2rem',
+    borderRadius: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    maxWidth: '600px',
+    margin: '0 auto',
+  },
+  section: {
+    marginBottom: '2rem',
+    paddingBottom: '1rem',
+    borderBottom: '1px solid #ecf0f1',
+  },
+  toggleLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    fontSize: '1rem',
+    fontWeight: '500',
+    marginBottom: '1rem',
+    cursor: 'pointer',
+  },
+  deliveryDetails: {
+    padding: '1rem',
+    backgroundColor: '#f8f9fa',
+    borderRadius: '6px',
+    marginTop: '1rem',
+  },
+  inputGroup: {
+    marginBottom: '1rem',
+  },
+  input: {
+    width: '100%',
+    padding: '0.75rem',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    fontSize: '1rem',
+    marginTop: '0.25rem',
+  },
+  textarea: {
+    width: '100%',
+    padding: '0.75rem',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    fontSize: '1rem',
+    marginTop: '0.25rem',
+    resize: 'vertical',
+    fontFamily: 'inherit',
+  },
+  helpText: {
+    color: '#6c757d',
+    fontSize: '0.8rem',
+    marginTop: '0.25rem',
+    display: 'block',
+  },
+  note: {
+    backgroundColor: '#e8f4fd',
+    padding: '1rem',
+    borderRadius: '6px',
+    marginBottom: '1.5rem',
+    fontSize: '0.9rem',
+    color: '#3498db',
+    border: '1px solid #b3d9ff',
+  },
+  saveButton: {
+    backgroundColor: '#27ae60',
+    color: 'white',
+    border: 'none',
+    padding: '1rem 2rem',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    width: '100%',
+  },
+  buttonDisabled: {
+    backgroundColor: '#bdc3c7',
+    color: 'white',
+    border: 'none',
+    padding: '1rem 2rem',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontWeight: '600',
+    cursor: 'not-allowed',
+    width: '100%',
+  },
   '@media (max-width: 767px)': {
     mobileMenuButton: {
-      display: 'block', // Show on mobile
+      display: 'block',
     },
     nav: {
-      display: 'none', // Hide desktop nav on mobile
+      display: 'none',
     },
     statsGrid: {
-      gridTemplateColumns: '1fr 1fr', // 2 columns on mobile
+      gridTemplateColumns: '1fr 1fr',
       gap: '0.75rem',
     },
     statCard: {
@@ -584,16 +916,15 @@ const styles = {
       width: '100%',
     },
     infoGrid: {
-      gridTemplateColumns: '1fr', // Stack on mobile
+      gridTemplateColumns: '1fr',
     },
   },
-
   '@media (min-width: 768px)': {
     mobileNav: {
-      display: 'none', // Hide mobile nav on desktop
+      display: 'none',
     },
     nav: {
-      display: 'flex', // Show desktop nav
+      display: 'flex',
     },
   },
 };
